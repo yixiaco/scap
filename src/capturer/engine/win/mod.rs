@@ -15,6 +15,7 @@ use windows_capture::{
     window::Window as WCWindow,
 };
 use windows_capture::capture::Context;
+use crate::frame::{RGBFrame, RGBxFrame};
 
 #[derive(Debug)]
 struct Capturer {
@@ -68,20 +69,9 @@ impl GraphicsCaptureApiHandler for Capturer {
                     Err(_) => return Err(("Failed to get raw buffer").into()),
                 };
 
-                let current_time = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .expect("Failed to get current time")
-                    .as_nanos() as u64;
-
-                let bgr_frame = BGRAFrame {
-                    display_time: current_time,
-                    width: cropped_area.size.width as i32,
-                    height: cropped_area.size.height as i32,
-                    data: raw_frame_buffer.to_vec(),
-                };
-
+                let data = raw_frame_buffer.to_vec();
                 self.tx
-                    .send(Frame::BGRA(bgr_frame))
+                    .send(get_frame(frame, data))
                     .expect("Failed to send data");
             }
             None => {
@@ -89,19 +79,8 @@ impl GraphicsCaptureApiHandler for Capturer {
                 let mut frame_buffer = frame.buffer().unwrap();
                 let raw_frame_buffer = frame_buffer.as_raw_buffer();
                 let frame_data = raw_frame_buffer.to_vec();
-                let current_time = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .expect("Failed to get current time")
-                    .as_nanos() as u64;
-                let bgr_frame = BGRAFrame {
-                    display_time: current_time,
-                    width: frame.width() as i32,
-                    height: frame.height() as i32,
-                    data: frame_data,
-                };
-
                 self.tx
-                    .send(Frame::BGRA(bgr_frame))
+                    .send(get_frame(frame, frame_data))
                     .expect("Failed to send data");
             }
         }
@@ -111,6 +90,39 @@ impl GraphicsCaptureApiHandler for Capturer {
     fn on_closed(&mut self) -> Result<(), Self::Error> {
         println!("Closed");
         Ok(())
+    }
+}
+
+fn get_frame(frame: &WCFrame, data: Vec<u8>) -> Frame {
+    let current_time = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Failed to get current time")
+        .as_nanos() as u64;
+    match frame.color_format() {
+        ColorFormat::Rgba16F => {
+            Frame::RGBx(RGBxFrame {
+                display_time: current_time,
+                width: frame.width() as i32,
+                height: frame.height() as i32,
+                data,
+            })
+        }
+        ColorFormat::Rgba8 => {
+            Frame::RGB(RGBFrame {
+                display_time: current_time,
+                width: frame.width() as i32,
+                height: frame.height() as i32,
+                data,
+            })
+        }
+        ColorFormat::Bgra8 => {
+            Frame::BGRA(BGRAFrame {
+                display_time: current_time,
+                width: frame.width() as i32,
+                height: frame.height() as i32,
+                data,
+            })
+        }
     }
 }
 
